@@ -1,0 +1,6 @@
+{
+  "nClasses": 4,
+  "PeakFit": false,
+  "SmoothWindow": 90,
+  "SmoothnessPenalty": 10
+}
