@@ -50,7 +50,7 @@
 end
 
 % =========================================================================
-% Подфункции (возвращены к исходной логике)
+% Подфункции (UI)
 % =========================================================================
 
 function config = load_fit_config()
@@ -99,13 +99,8 @@ function [selected_sets, available_sets] = select_datasets(AllEEG)
     end
 
     setnames = {AllEEG(available_sets).setname};
-    [res, ~, ~, out] = inputgui(...
-        'geometry', [1 1 1], 'geomvert', [1 1 4], ...
-        'uilist', {...
-            {'Style', 'text', 'string', 'Выберите наборы для наложения карт', 'FontWeight', 'bold'}, ...
-            {'Style', 'text', 'string', 'Используйте Ctrl/Shift для множественного выбора'}, ...
-            {'Style', 'listbox', 'string', setnames, 'Min', 0, 'Max', 2, 'Value', 1, 'tag', 'SelectedSets'} ...
-        }, 'title', 'Распознавание микросостояний');
+    [geometry, geomvert, uilist, title] = get_dataset_selection_ui(setnames);
+    [res, ~, ~, out] = inputgui( 'geometry', geometry, 'geomvert', geomvert, 'uilist', uilist, 'title', title);
     if isempty(res)
         selected_sets = [];
         return;
@@ -136,12 +131,8 @@ function [template_source, template_EEG] = select_template_source(AllEEG)
     all_sources_cell = [{'Собственные карты каждого набора'}, mean_names, pub_display];
     all_sources_str = strjoin(all_sources_cell, '|');
 
-    [res, ~, ~, out] = inputgui(...
-        'geometry', {[1] [1]}, 'geomvert', [1 1], ...
-        'uilist', {...
-            {'Style', 'text', 'string', 'Выберите источник карт:'}, ...
-            {'Style', 'popupmenu', 'string', all_sources_str, 'tag', 'TemplateChoice', 'Value', 1} ...
-        }, 'title', 'Источник шаблона');
+    [geometry, geomvert, uilist, title] = get_template_source_ui(all_sources_str);
+    [res, ~, ~, out] = inputgui('geometry', geometry, 'geomvert', geomvert, 'uilist', uilist, 'title', title);
     if isempty(res)
         return;
     end
@@ -159,98 +150,13 @@ function [template_source, template_EEG] = select_template_source(AllEEG)
     end
 end
 
-function [AllEEG, success_count] = perform_backfitting(AllEEG, selected_sets, template_source, template_EEG, config)
-    % Основной цикл обратного наложения с waitbar
-    n_classes = config.nClasses;
-    FitPar.PeakFit = config.PeakFit;
-    FitPar.b = config.SmoothWindow;
-    FitPar.lambda = config.SmoothnessPenalty;
-    FitPar.Classes = n_classes;
-
-    h = waitbar(0, 'Подготовка...', 'Name', 'Обратное наложение микросостояний', 'CreateCancelBtn', 'setappdata(gcbf,''canceling'',1)');
-    cleanup = onCleanup(@() safe_close(h));
-
-    total_steps = numel(selected_sets);
-    success_count = 0;
-
-    for s = 1:total_steps
-        if getappdata(h, 'canceling')
-            fprintf('Операция прервана пользователем.\n');
-            break;
-        end
-
-        s_idx = selected_sets(s);
-        waitbar(s/total_steps, h, sprintf('Обработка %d из %d: %s', s, total_steps, AllEEG(s_idx).setname));
-
-        EEGtmp = AllEEG(s_idx);
-
-        % Получение карт
-        maps_are_valid = false;
-        if strcmp(template_source, 'own')
-            if isfield(EEGtmp, 'msinfo') && isstruct(EEGtmp.msinfo) && isfield(EEGtmp.msinfo, 'MSMaps') && ...
-               numel(EEGtmp.msinfo.MSMaps) >= n_classes && ~isempty(EEGtmp.msinfo.MSMaps(n_classes).Maps)
-                maps_are_valid = true;
-                maps = EEGtmp.msinfo.MSMaps(n_classes).Maps;
-                TemplateInfo.name = '<<собственные>>';
-                TemplateInfo.SortedBy = EEGtmp.msinfo.MSMaps(n_classes).SortedBy;
-                TemplateInfo.TemplateLabels = EEGtmp.msinfo.MSMaps(n_classes).Labels;
-            end
-            if ~maps_are_valid
-                 warning('Набор %s не содержит карт для %i классов, пропуск.', EEGtmp.setname, n_classes);
-                 continue;
-            end
-        else
-            if isfield(template_EEG, 'msinfo') && isstruct(template_EEG.msinfo) && isfield(template_EEG.msinfo, 'MSMaps') && ...
-               numel(template_EEG.msinfo.MSMaps) >= n_classes && ~isempty(template_EEG.msinfo.MSMaps(n_classes).Maps)
-                maps_are_valid = true;
-                maps = template_EEG.msinfo.MSMaps(n_classes).Maps;
-                TemplateInfo.name = template_source;
-                TemplateInfo.SortedBy = template_EEG.msinfo.MSMaps(n_classes).SortedBy;
-                TemplateInfo.TemplateLabels = template_EEG.msinfo.MSMaps(n_classes).Labels;
-            end
-            if ~maps_are_valid
-                warning('Шаблон %s не содержит карт для %i классов, пропуск набора %s.', template_source, n_classes, EEGtmp.setname);
-                continue;
-            end
-        end
-
-        % Ресемплинг каналов
-        if ~strcmp(template_source, 'own') && EEGtmp.nbchan ~= template_EEG.nbchan
-            [LocalToGlobal, ~] = MakeResampleMatrices(EEGtmp.chanlocs, template_EEG.chanlocs);
-            EEGtmp.data = LocalToGlobal * reshape(EEGtmp.data, EEGtmp.nbchan, []);
-            EEGtmp.nbchan = template_EEG.nbchan;
-            EEGtmp.chanlocs = template_EEG.chanlocs;
-        end
-
-        % Присвоение меток и вычисление параметров
-        [MSClass, gfp, IndGEVs] = AssignMStates(EEGtmp, maps, FitPar, true);
-        if isempty(MSClass)
-            warning('Не удалось выполнить наложение для набора %s, пропуск.', EEGtmp.setname);
-            continue;
-        end
-        MSStats = QuantifyMSDynamics(MSClass, gfp, EEGtmp.srate, TemplateInfo, IndGEVs);
-
-        % Сохранение результатов в ALLEEG
-        AllEEG(s_idx).msinfo.FitPar = FitPar;
-        AllEEG(s_idx).msinfo.MSStats(n_classes) = MSStats;
-        AllEEG(s_idx).saved = 'no';
-        success_count = success_count + 1;
-    end
-    
-    function safe_close(h_local)
-        if ishandle(h_local)
-            delete(h_local);
-        end
-    end
-end
-
 function offer_saving(AllEEG, selected_sets)
     % Предлагает сохранить изменения
     if isempty(selected_sets)
         return;
     end
-    answer = questdlg('Сохранить изменения в обработанных наборах?', 'Сохранение', ...
-        'Сохранить', 'Сохранить как...', 'Отмена', 'Сохранить');
+    [question, title, btn1, btn2, btn3, default_btn] = get_saving_options_ui();
+    answer = questdlg(question, title, btn1, btn2, btn3, default_btn);
     switch answer
         case 'Сохранить'
             for i = 1:numel(selected_sets)
