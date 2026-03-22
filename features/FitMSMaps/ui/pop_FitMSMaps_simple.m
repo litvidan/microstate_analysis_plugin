@@ -1,10 +1,9 @@
-﻿function [EEGout, com] = pop_FitMSMaps_simple(AllEEG)
+﻿function [EEG, com] = pop_FitMSMaps_simple(AllEEG_in)
     % pop_FitMSMaps_simple - Упрощённое обратное наложение микросостояний
     % Загружает параметры из fit_config.json
 
     com = '';
-    global EEG CURRENTSET MSTATES_TEMPLATES;
-    EEGout = EEG;
+    global ALLEEG EEG CURRENTSET MSTATES_TEMPLATES;
 
     % === 1. Загрузка конфигурации из JSON ===
     config = load_fit_config();
@@ -13,19 +12,19 @@
     end
 
     % === 2. Выбор наборов ===
-    [selected_sets, ~] = select_datasets(AllEEG);
+    [selected_sets, ~] = select_datasets(AllEEG_in);
     if isempty(selected_sets)
         return;
     end
 
     % === 3. Выбор источника шаблонов ===
-    [template_source, template_EEG] = select_template_source(AllEEG);
+    [template_source, template_EEG] = select_template_source(AllEEG_in);
     if isempty(template_source)
         return;
     end
 
     % === 4. Выполнение обратного наложения ===
-    [AllEEG, success_count] = perform_backfitting(AllEEG, selected_sets, template_source, template_EEG, config);
+    [AllEEG_modified, success_count] = perform_backfitting(AllEEG_in, selected_sets, template_source, template_EEG, config);
 
     if success_count == 0
         errordlg2('Ни один набор не был успешно обработан.', 'Ошибка');
@@ -33,18 +32,28 @@
     end
     
     processed_indices = selected_sets(1:success_count);
-    EEGout = AllEEG(processed_indices);
-
-    % === 5. Отображение динамики ===
-    if success_count > 0
-        drawnow;
-        % Вызываем pop_ShowIndMSDyn в интерактивном режиме.
-        % Он сам спросит, что показывать.
-        pop_ShowIndMSDyn(AllEEG);
+    
+    % === 5. Обновление глобального ALLEEG ===
+    for i = 1:numel(processed_indices)
+        idx = processed_indices(i);
+        ALLEEG(idx) = AllEEG_modified(idx);
     end
 
-    % === 6. Сохранение ===
-    offer_saving(AllEEG, processed_indices);
+    % Обновляем текущий набор данных
+    CURRENTSET = processed_indices(end);
+    EEG = ALLEEG(CURRENTSET);
+
+    % === 6. Отображение динамики ===
+    if success_count > 0
+        drawnow;
+        pop_ShowIndMSDyn(ALLEEG);
+    end
+
+    % === 7. Сохранение ===
+    offer_saving(ALLEEG, processed_indices);
+
+    % === 8. Обновление GUI EEGLAB ===
+    eeglab('redraw');
 
     com = 'pop_FitMSMaps_simple(ALLEEG);';
 end
@@ -93,7 +102,7 @@ function [selected_sets, available_sets] = select_datasets(AllEEG)
     available_sets = find(~has_children & ~has_dyn & ~cellfun(@isempty, {AllEEG.data}));
 
     if isempty(available_sets)
-        errorDialog('Нет подходящих наборов для обратного наложения.', 'Ошибка');
+        errordlg2('Нет подходящих наборов для обратного наложения.', 'Ошибка');
         selected_sets = [];
         return;
     end
@@ -164,7 +173,17 @@ function offer_saving(AllEEG, selected_sets)
             end
         case 'Сохранить как...'
             for i = 1:numel(selected_sets)
-                pop_saveset(AllEEG(selected_sets(i)), 'savemode', 'gui');
+                currentEEG = AllEEG(selected_sets(i));
+                
+                % Предлагаем новое имя файла с суффиксом _fit
+                if ~isempty(currentEEG.filename)
+                    [~, fname, ext] = fileparts(currentEEG.filename);
+                    suggested_filename = [fname '_fit' ext];
+                else
+                    suggested_filename = [currentEEG.setname '_fit.set'];
+                end
+                
+                pop_saveset(currentEEG, 'filename', suggested_filename);
             end
     end
 end
