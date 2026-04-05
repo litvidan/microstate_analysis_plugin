@@ -1,5 +1,7 @@
 ﻿function ui_update_stats_window(fig, ud)
     % Обновляет содержимое окна статистики
+    
+    % --- Поиск стандартных элементов ---
     table_epoch = findobj(fig, 'Tag', 'table_epoch');
     table_global = findobj(fig, 'Tag', 'table_global');
     text_cov = findobj(fig, 'Tag', 'text_cov');
@@ -7,25 +9,13 @@
         return;
     end
 
-    % Переходы для текущей эпохи
-    assign_epoch = ud.Assignment(:, ud.Segment);
+    % --- Обновление таблиц переходов ---
     epoch_trans = logic_compute_transitions(ud.Assignment, ud.nClasses, ud.Segment);
-    set(table_epoch, 'Data', arrayfun(@(x) sprintf('%.1f', x), epoch_trans, 'UniformOutput', false));
-    set(table_global, 'Data', arrayfun(@(x) sprintf('%.1f', x), ud.global_transitions, 'UniformOutput', false));
+    set(table_epoch, 'Data', epoch_trans);
+    set(table_global, 'Data', ud.global_transitions);
 
-    % Покрытие
-    fit_epoch = ud.fit_data{ud.Segment};
-    epoch_cov = zeros(1, ud.nClasses);
-    total_valid = 0;
-    for c = 1:ud.nClasses
-        active = ~isnan(fit_epoch(c+1, :));
-        epoch_cov(c) = sum(active);
-        total_valid = total_valid + sum(active);
-    end
-    if total_valid > 0
-        epoch_cov = epoch_cov / total_valid * 100;
-    end
-
+    % --- Обновление текста покрытия ---
+    epoch_cov = logic_compute_coverage(ud.fit_data{ud.Segment}, ud.nClasses);
     cov_str = 'Покрытие (текущая эпоха): ';
     for c = 1:ud.nClasses
         cov_str = [cov_str, sprintf('%s: %.1f%%  ', char(64+c), epoch_cov(c))];
@@ -35,4 +25,35 @@
         cov_str = [cov_str, sprintf('%s: %.1f%%  ', char(64+c), ud.global_cov(c))];
     end
     set(text_cov, 'String', cov_str);
+
+    % --- Обновление метрик по событиям ---
+    dropdown = findobj(fig, 'Tag', 'dropdown_event_type');
+    edit_from = findobj(fig, 'Tag', 'edit_time_from');
+    edit_to = findobj(fig, 'Tag', 'edit_time_to');
+    table_event = findobj(fig, 'Tag', 'table_event');
+
+    if isempty(dropdown) || isempty(edit_from) || isempty(edit_to) || isempty(table_event)
+        return; % Если элементы еще не созданы
+    end
+    
+    % Получаем значения из uicontrol
+    event_type_list = get(dropdown, 'String');
+    selected_index = get(dropdown, 'Value');
+    event_type = event_type_list{selected_index};
+    
+    time_from = str2double(get(edit_from, 'String'));
+    time_to = str2double(get(edit_to, 'String'));
+    
+    % Проверка, что в ud есть нужные поля
+    if ~isfield(ud, 'Assignment') || ~isfield(ud, 'Time')
+        disp('Отсутствуют необходимые поля в UserData для расчета метрик по событиям.');
+        return;
+    end
+
+    % Вызов новой логики
+    metrics = logic_calculate_event_metrics(ud, event_type, time_from, time_to);
+    
+    % Форматирование и обновление таблицы
+    formatted_metrics = arrayfun(@(x) sprintf('%.2f', x), metrics, 'UniformOutput', false);
+    set(table_event, 'Data', formatted_metrics);
 end
