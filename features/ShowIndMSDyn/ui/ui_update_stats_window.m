@@ -15,7 +15,7 @@
     set(table_global, 'Data', ud.global_transitions);
 
     % --- Обновление текста покрытия ---
-    epoch_cov = logic_compute_coverage(ud.fit_data{ud.Segment}, ud.nClasses);
+    epoch_cov = logic_compute_coverage(ud.Assignment(:, ud.Segment), ud.nClasses);
     cov_str = 'Покрытие (текущая эпоха): ';
     for c = 1:ud.nClasses
         cov_str = [cov_str, sprintf('%s: %.1f%%  ', char(64+c), epoch_cov(c))];

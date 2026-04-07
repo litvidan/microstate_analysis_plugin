@@ -33,27 +33,15 @@
     
     processed_indices = selected_sets(1:success_count);
     
-    % === 5. Обновление глобального ALLEEG ===
-    for i = 1:numel(processed_indices)
-        idx = processed_indices(i);
-        ALLEEG(idx) = AllEEG_modified(idx);
-    end
-
-    % Обновляем текущий набор данных
-    CURRENTSET = processed_indices(end);
-    EEG = ALLEEG(CURRENTSET);
 
     % === 6. Отображение динамики ===
     if success_count > 0
         drawnow;
-        pop_ShowIndMSDyn(ALLEEG);
+        pop_ShowIndMSDyn(AllEEG_modified);
     end
 
     % === 7. Сохранение ===
     offer_saving(ALLEEG, processed_indices);
-
-    % === 8. Обновление GUI EEGLAB ===
-    eeglab('redraw');
 
     com = 'pop_FitMSMaps_simple(ALLEEG);';
 end
