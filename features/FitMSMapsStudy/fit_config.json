@@ -1,0 +1,18 @@
+﻿{
+    "SaveBackfitted": true,
+    "SaveLabelFile": true,
+    "SaveStats": true,
+    "UseExistingTemplate": true,
+    "TemplateIndex": 1,
+    "TemplateFilePath": "",
+    "TemplateFileName": "",
+    "Resample": false,
+    "ResampleFrequency": 50,
+    "Smooth": false,
+    "B": 0.5,
+    "MinMSDuration": 30,
+    "MeanMSDuration": 30,
+    "RejectBadFits": false,
+    "BadFitThreshold": 0.8,
+    "DatasetIds": []
+}
