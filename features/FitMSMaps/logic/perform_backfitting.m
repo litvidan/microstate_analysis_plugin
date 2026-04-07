@@ -1,17 +1,16 @@
 ﻿function [AllEEG, success_count] = perform_backfitting(AllEEG, selected_sets, template_source, template_EEG, config)
-    % perform_backfitting - Основная логика для обратного наложения микросостояний
+    % perform_backfitting - Обратное наложение для нескольких наборов (вызов backfit_single_dataset)
     %
-    % Входные параметры:
-    %   AllEEG          - Структура ALLEEG
-    %   selected_sets   - Индексы выбранных для обработки наборов
-    %   template_source - Имя источника шаблонов ('own' или имя набора)
-    %   template_EEG    - EEG структура с шаблонами (если не 'own')
-    %   config          - Структура с параметрами из fit_config.json
+    % Вход:
+    %   AllEEG          - массив структур EEG
+    %   selected_sets   - индексы наборов для обработки
+    %   template_source - 'own' или имя шаблона
+    %   template_EEG    - EEG с шаблонами (если template_source не 'own')
+    %   config          - структура с параметрами (nClasses, PeakFit, SmoothWindow, SmoothnessPenalty)
     %
-    % Возвращаемые значения:
-    %   AllEEG          - Обновленная структура ALLEEG
-    %   success_count   - Количество успешно обработанных наборов
-    %
+    % Выход:
+    %   AllEEG          - обновлённый массив
+    %   success_count   - количество успешно обработанных наборов
 
     n_classes = config.nClasses;
     FitPar.PeakFit = config.PeakFit;
@@ -19,7 +18,15 @@
     FitPar.lambda = config.SmoothnessPenalty;
     FitPar.Classes = n_classes;
 
-    h = waitbar(0, 'Подготовка...', 'Name', 'Обратное наложение микросостояний', 'CreateCancelBtn', 'setappdata(gcbf,''canceling'',1)');
+    % ---- Обеспечить однородность массива AllEEG (поле msinfo должно быть у всех) ----
+    for i = 1:length(AllEEG)
+        if ~isfield(AllEEG(i), 'msinfo')
+            AllEEG(i).msinfo = [];
+        end
+    end
+
+    h = waitbar(0, 'Подготовка...', 'Name', 'Обратное наложение микросостояний', ...
+                'CreateCancelBtn', 'setappdata(gcbf,''canceling'',1)');
     cleanup = onCleanup(@() safe_close(h));
 
     total_steps = numel(selected_sets);
@@ -34,64 +41,100 @@
         s_idx = selected_sets(s);
         waitbar(s/total_steps, h, sprintf('Обработка %d из %d: %s', s, total_steps, AllEEG(s_idx).setname));
 
-        EEGtmp = AllEEG(s_idx);
+        % Вызов функции обработки одного набора
+        [EEG_updated, success] = backfit_single_dataset(AllEEG(s_idx), template_source, ...
+                                                         template_EEG, n_classes, FitPar);
 
-        % Получение карт
-        maps_are_valid = false;
-        if strcmp(template_source, 'own')
-            if isfield(EEGtmp, 'msinfo') && isstruct(EEGtmp.msinfo) && isfield(EEGtmp.msinfo, 'MSMaps') && ...
-               numel(EEGtmp.msinfo.MSMaps) >= n_classes && ~isempty(EEGtmp.msinfo.MSMaps(n_classes).Maps)
-                maps_are_valid = true;
-                maps = EEGtmp.msinfo.MSMaps(n_classes).Maps;
-                TemplateInfo.name = '<<собственные>>';
-                TemplateInfo.SortedBy = EEGtmp.msinfo.MSMaps(n_classes).SortedBy;
-                TemplateInfo.TemplateLabels = EEGtmp.msinfo.MSMaps(n_classes).Labels;
-            end
-            if ~maps_are_valid
-                 warning('Набор %s не содержит карт для %i классов, пропуск.', EEGtmp.setname, n_classes);
-                 continue;
-            end
+        if success
+            AllEEG(s_idx) = EEG_updated;
+            success_count = success_count + 1;
         else
-            if isfield(template_EEG, 'msinfo') && isstruct(template_EEG.msinfo) && isfield(template_EEG.msinfo, 'MSMaps') && ...
-               numel(template_EEG.msinfo.MSMaps) >= n_classes && ~isempty(template_EEG.msinfo.MSMaps(n_classes).Maps)
-                maps_are_valid = true;
-                maps = template_EEG.msinfo.MSMaps(n_classes).Maps;
-                TemplateInfo.name = template_source;
-                TemplateInfo.SortedBy = template_EEG.msinfo.MSMaps(n_classes).SortedBy;
-                TemplateInfo.TemplateLabels = template_EEG.msinfo.MSMaps(n_classes).Labels;
-            end
-            if ~maps_are_valid
-                warning('Шаблон %s не содержит карт для %i классов, пропуск набора %s.', template_source, n_classes, EEGtmp.setname);
-                continue;
-            end
+            warning('Набор %s не обработан', AllEEG(s_idx).setname);
         end
-
-        % Ресемплинг каналов
-        if ~strcmp(template_source, 'own') && EEGtmp.nbchan ~= template_EEG.nbchan
-            [LocalToGlobal, ~] = MakeResampleMatrices(EEGtmp.chanlocs, template_EEG.chanlocs);
-            EEGtmp.data = LocalToGlobal * reshape(EEGtmp.data, EEGtmp.nbchan, []);
-            EEGtmp.nbchan = template_EEG.nbchan;
-            EEGtmp.chanlocs = template_EEG.chanlocs;
-        end
-
-        % Присвоение меток и вычисление параметров
-        [MSClass, gfp, IndGEVs] = AssignMStates(EEGtmp, maps, FitPar, true);
-        if isempty(MSClass)
-            warning('Не удалось выполнить наложение для набора %s, пропуск.', EEGtmp.setname);
-            continue;
-        end
-        MSStats = QuantifyMSDynamics(MSClass, gfp, EEGtmp.srate, TemplateInfo, IndGEVs);
-
-        % Сохранение результатов в ALLEEG
-        AllEEG(s_idx).msinfo.FitPar = FitPar;
-        AllEEG(s_idx).msinfo.MSStats(n_classes) = MSStats;
-        AllEEG(s_idx).saved = 'no';
-        success_count = success_count + 1;
     end
-    
+
     function safe_close(h_local)
         if ishandle(h_local)
             delete(h_local);
         end
     end
+end
+
+
+function [EEGout, success] = backfit_single_dataset(EEGin, template_source, template_EEG, n_classes, FitPar)
+    % backfit_single_dataset - Обратное наложение для одного набора EEG
+    %
+    % Вход:
+    %   EEGin           - структура EEG
+    %   template_source - 'own' или имя другого набора
+    %   template_EEG    - EEG структура с шаблонами (если template_source не 'own')
+    %   n_classes       - количество классов микросостояний
+    %   FitPar          - параметры для AssignMStates
+    %
+    % Выход:
+    %   EEGout          - обновленная структура EEG
+    %   success         - true, если обработка успешна
+
+    EEGout = EEGin;
+    success = false;
+
+    % 1. Получение карт и информации о шаблоне
+    maps_are_valid = false;
+    if strcmp(template_source, 'own')
+        if isfield(EEGin, 'msinfo') && isstruct(EEGin.msinfo) && ...
+           isfield(EEGin.msinfo, 'MSMaps') && ...
+           numel(EEGin.msinfo.MSMaps) >= n_classes && ...
+           ~isempty(EEGin.msinfo.MSMaps(n_classes).Maps)
+
+            maps_are_valid = true;
+            maps = EEGin.msinfo.MSMaps(n_classes).Maps;
+            TemplateInfo.name = '<<собственные>>';
+            TemplateInfo.SortedBy = EEGin.msinfo.MSMaps(n_classes).SortedBy;
+            TemplateInfo.TemplateLabels = EEGin.msinfo.MSMaps(n_classes).Labels;
+        end
+    else
+        if isfield(template_EEG, 'msinfo') && isstruct(template_EEG.msinfo) && ...
+           isfield(template_EEG.msinfo, 'MSMaps') && ...
+           numel(template_EEG.msinfo.MSMaps) >= n_classes && ...
+           ~isempty(template_EEG.msinfo.MSMaps(n_classes).Maps)
+
+            maps_are_valid = true;
+            maps = template_EEG.msinfo.MSMaps(n_classes).Maps;
+            TemplateInfo.name = template_source;
+            TemplateInfo.SortedBy = template_EEG.msinfo.MSMaps(n_classes).SortedBy;
+            TemplateInfo.TemplateLabels = template_EEG.msinfo.MSMaps(n_classes).Labels;
+        end
+    end
+
+    if ~maps_are_valid
+        warning('Не удалось получить карты для %d классов из источника %s', n_classes, template_source);
+        return;
+    end
+
+    % 2. Ресемплинг каналов (если используем внешний шаблон и число каналов разное)
+    if ~strcmp(template_source, 'own') && EEGin.nbchan ~= template_EEG.nbchan
+        [LocalToGlobal, ~] = MakeResampleMatrices(EEGin.chanlocs, template_EEG.chanlocs);
+        EEGout.data = LocalToGlobal * reshape(EEGout.data, EEGout.nbchan, []);
+        EEGout.nbchan = template_EEG.nbchan;
+        EEGout.chanlocs = template_EEG.chanlocs;
+    end
+
+    % 3. Присвоение меток и вычисление параметров
+    [MSClass, gfp, IndGEVs] = AssignMStates(EEGout, maps, FitPar, true);
+    if isempty(MSClass)
+        warning('AssignMStates не вернул метки для набора %s', EEGin.setname);
+        return;
+    end
+
+    MSStats = QuantifyMSDynamics(MSClass, gfp, EEGout.srate, TemplateInfo, IndGEVs);
+
+    % 4. Сохранение результатов
+    if ~isfield(EEGout, 'msinfo') || ~isstruct(EEGout.msinfo)
+        EEGout.msinfo = struct();
+    end
+    EEGout.msinfo.FitPar = FitPar;
+    EEGout.msinfo.MSStats(n_classes) = MSStats;
+    EEGout.saved = 'no';
+
+    success = true;
 end
