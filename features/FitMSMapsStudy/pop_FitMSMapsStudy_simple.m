@@ -1,5 +1,6 @@
 ﻿function [STUDY, ALLEEG, com] = pop_FitMSMapsStudy_simple(STUDY, ALLEEG, varargin)
     % pop_FitMSMapsStudy_simple - GUI wrapper for applying microstate backfitting to a STUDY.
+    % After backfitting, optionally displays grand average dynamics.
     %
     % Usage:
     %   [STUDY, ALLEEG, com] = pop_FitMSMapsStudy_simple(STUDY, ALLEEG);
@@ -50,5 +51,26 @@
         end
     end
 
+    % После успешного backfitting, в конце функции pop_FitMSMapsStudy_simple.m:
+    if success_count > 0
+        answer = questdlg('Backfitting completed. Show aggregated statistics for the STUDY?', ...
+                          'Study Statistics', 'Yes', 'No', 'Yes');
+        if strcmp(answer, 'Yes')
+            try
+                % Загружаем все результаты
+                study_data = logic_load_study_data(STUDY);
+                
+                % Вычисляем n_classes, если отсутствует
+                if ~isfield(study_data, 'n_classes') && study_data.n_sets > 0
+                    study_data.n_classes = length(study_data.MSStats_all{1}.Coverage);
+                end
+                % Отображаем окно
+                ui_study_stats_window(study_data, template_source);
+            catch ME
+                errordlg(sprintf('Error displaying study statistics:\n%s', ME.message), 'Display Error');
+            end
+        end
+    end
+    
     com = sprintf('pop_FitMSMapsStudy_simple(STUDY, ALLEEG);');
 end
