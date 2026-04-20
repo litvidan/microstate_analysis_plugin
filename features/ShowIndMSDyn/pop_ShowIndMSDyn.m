@@ -1,20 +1,30 @@
-﻿function com = pop_ShowIndMSDyn(AllEEG)
+﻿function com = pop_ShowIndMSDyn(AllEEG, varargin)
     [~, nogui] = eegplugin_simplemicrostate;
     if nogui, error('Требуется GUI'); end
 
     global CURRENTSET;
     com = '';
 
+    % Парсинг входных аргументов
+    p = inputParser;
+    addRequired(p, 'AllEEG', @isstruct);
+    addParameter(p, 'nclasses', [], @isnumeric);
+    parse(p, AllEEG, varargin{:});
+    
+    n_classes = p.Results.nclasses;
+
     % Выбор наборов
     selected = ui_select_datasets(AllEEG, CURRENTSET);
     if isempty(selected), return; end
 
-    % Выбор классов
-    n_classes = ui_select_nclasses(AllEEG, selected);
-    if isempty(n_classes), return; end
+    % Выбор классов, если они не были переданы
+    if isempty(n_classes)
+        n_classes = ui_select_nclasses(AllEEG, selected);
+        if isempty(n_classes), return; end
+    end
 
     % Определение размера экрана
-    figSize = get_screen_size();
+    figSize = utils_get_screen_size();
 
     % Создание главного окна
     fig = figure('ToolBar','none','MenuBar','figure','NumberTitle','off',...
@@ -47,23 +57,4 @@ function close_main_fig(src, ~, tab_group)
         end
     end
     delete(src);
-end
-
-function figSize = get_screen_size()
-    toolkit = java.awt.Toolkit.getDefaultToolkit();
-    jframe = javax.swing.JFrame;
-    insets = toolkit.getScreenInsets(jframe.getGraphicsConfiguration());
-    tempFig = figure('ToolBar', 'none', 'MenuBar', 'figure', 'Position', [-1000 -1000 0 0]);
-    pause(0.2);
-    titleBarHeight = tempFig.OuterPosition(4) - tempFig.InnerPosition(4) + tempFig.OuterPosition(2) - tempFig.InnerPosition(2);
-    delete(tempFig);
-    monitorPositions = get(0, 'MonitorPositions');
-    if size(monitorPositions, 1) > 1
-        screenSizes = arrayfun(@(x) monitorPositions(x, 3)*monitorPositions(x,4), 1:size(monitorPositions, 1));
-        [~, i] = max(screenSizes);
-        screenSize = monitorPositions(i, :);
-    else
-        screenSize = get(0, 'ScreenSize');
-    end
-    figSize = screenSize + [insets.left, insets.bottom, -insets.left-insets.right, -titleBarHeight-insets.bottom-insets.top];
 end

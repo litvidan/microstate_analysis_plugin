@@ -37,7 +37,7 @@
     % === 6. Отображение динамики ===
     if success_count > 0
         drawnow;
-        pop_ShowIndMSDyn(AllEEG_modified);
+        pop_ShowIndMSDyn(AllEEG_modified, 'nclasses', config.nClasses);
     end
 
     % === 7. Сохранение ===
