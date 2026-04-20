@@ -35,7 +35,7 @@
     show_maps(AllEEG, selected_sets, config.nClasses);
 
     % === Шаг 5: Сортировка карт (всегда) ===
-    AllEEG = sort_maps(AllEEG, selected_sets);
+    AllEEG = sort_maps(AllEEG, selected_sets, config);
     EEGout = AllEEG(selected_sets); % обновляем после сортировки
 
     % === Шаг 6: Сохранение ===
@@ -186,11 +186,11 @@ function show_maps(AllEEG, selected_sets, n_classes)
     pop_ShowIndMSMaps(AllEEG, selected_sets, 'Classes', n_classes);
 end
 
-function AllEEG = sort_maps(AllEEG, selected_sets)
+function AllEEG = sort_maps(AllEEG, selected_sets, config)
     % Вызывает интерактивную сортировку для каждого набора
     for i = 1:numel(selected_sets)
         s_idx = selected_sets(i);
-        [AllEEG, ~, ~] = pop_SortMSMaps(AllEEG, s_idx);
+        [AllEEG, ~, ~] = pop_SortMSMaps(AllEEG, s_idx, 'Classes', config.nClasses);
     end
 end
 

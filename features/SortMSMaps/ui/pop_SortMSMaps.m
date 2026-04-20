@@ -90,12 +90,14 @@
     end
 
     %% Handle manual/interactive sort case
-    % Поскольку мы всегда используем ручную сортировку, этот блок становится основным
-    
     classRange = AllEEG(SelectedSets).msinfo.ClustPar.MinClasses:AllEEG(SelectedSets).msinfo.ClustPar.MaxClasses;
     
-    % Если параметры для сортировки переданы через командную строку
-    if ~matches(Classes, 'all') && ~isempty(NewLabels)            
+    % Если переданы метки (NewLabels), это программный вызов для сортировки
+    if ~isempty(NewLabels)
+        if ~isnumeric(Classes)
+             error('Для программной сортировки необходимо указать числовое значение для ''Classes''.');
+        end
+        
         SortedMaps = ManualSort(AllEEG(SelectedSets).msinfo.MSMaps, SortOrder, NewLabels, Classes, classRange);
         if isempty(SortedMaps); return; end
 
@@ -113,15 +115,19 @@
 
         return;
     else
-        % В противном случае, всегда открываем интерактивное окно
-        classChoices = arrayfun(@(x) {sprintf('%i Классов', x)}, classRange);
-        [res,~,~,outstruct] = inputgui('geometry', [1 1], 'geomvert', [1 4], 'uilist', ...
-            { {'Style', 'text', 'String', 'Выберите решения для отображения в окне'} ...
-              {'Style', 'listbox', 'String', classChoices, 'Min', 0, 'Max', 2, 'Value', 1:numel(classRange), 'Tag', 'Classes'}}, ...
-            'title','Редактирование и сортировка карт');
+        % В противном случае - интерактивный вызов
+        
+        % Если количество классов не было передано как число, спрашиваем у пользователя
+        if ~isnumeric(Classes)
+            classChoices = arrayfun(@(x) {sprintf('%i Классов', x)}, classRange);
+            [res,~,~,outstruct] = inputgui('geometry', [1 1], 'geomvert', [1 4], 'uilist', ...
+                { {'Style', 'text', 'String', 'Выберите решения для отображения в окне'} ...
+                  {'Style', 'listbox', 'String', classChoices, 'Min', 0, 'Max', 2, 'Value', 1:numel(classRange), 'Tag', 'Classes'}}, ...
+                'title','Редактирование и сортировка карт');
 
-        if isempty(res); return; end
-        Classes = classRange(outstruct.Classes);
+            if isempty(res); return; end
+            Classes = classRange(outstruct.Classes);
+        end
 
         [EEGout, CurrentSet, childIdx, childEEG, com] = InteractiveSort(AllEEG, SelectedSets, Classes);
         global ALLEEG;
