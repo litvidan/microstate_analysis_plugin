@@ -21,7 +21,7 @@
     if ~strcmp(template_source, 'own')
         if ~isfield(template_EEG, 'msinfo') || ~isfield(template_EEG.msinfo, 'MSMaps') || ...
            numel(template_EEG.msinfo.MSMaps) < n_classes || isempty(template_EEG.msinfo.MSMaps(n_classes).Maps)
-            error('Template "%s" does not contain valid maps for %d classes.', template_source, n_classes);
+            error('Шаблонные карты "%s" не содержат валидных карт для %d классов.', template_source, n_classes);
         end
     end
 
@@ -30,23 +30,23 @@
     failed_files = {};
 
     % Waitbar
-    h = waitbar(0, 'Starting backfitting process...', 'Name', 'Study Backfitting', ...
+    h = waitbar(0, 'Начинается процесс присвоения...', 'Name', 'Присвоение карт...', ...
                 'CreateCancelBtn', 'setappdata(gcbf,''canceling'',1)');
     cleanup = onCleanup(@() delete(h(ishandle(h))));
 
     for i = 1:total_datasets
         if getappdata(h, 'canceling')
-            fprintf('Operation cancelled by user.\n');
+            fprintf('Операция отменена пользователем.\n');
             break;
         end
 
         dinfo = STUDY.datasetinfo(i);
-        waitbar(i / total_datasets, h, sprintf('Processing %s...', dinfo.filename));
+        waitbar(i / total_datasets, h, sprintf('Обработка %s...', dinfo.filename));
 
         % Load dataset
         EEG = pop_loadset('filename', dinfo.filename, 'filepath', dinfo.filepath);
         if isempty(EEG)
-            warning('Failed to load dataset %s, skipping.', dinfo.filename);
+            warning('Не получилось загрузить датасет %s, пропускаю.', dinfo.filename);
             failed_files{end+1} = dinfo.filename;
             continue;
         end
@@ -67,7 +67,7 @@
             results.MSStats = EEG_updated.msinfo.MSStats(n_classes);
             success_count = success_count + 1;
         else
-            warning('Backfitting failed for %s, skipping.', EEG.setname);
+            warning('Присвоение не удалось для %s, пропускаю.', EEG.setname);
             failed_files{end+1} = dinfo.filename;
         end
 
@@ -77,12 +77,12 @@
         try
             save(output_filename, 'results');
             if success
-                fprintf('Saved dynamics for %s\n', EEG.setname);
+                fprintf('Сохранена динамика для %s\n', EEG.setname);
             else
-                fprintf('Saved failure marker for %s\n', EEG.setname);
+                fprintf('Сохранен маркер ошибки для %s\n', EEG.setname);
             end
         catch ME
-            warning('Failed to save results for %s: %s', EEG.setname, ME.message);
+            warning('Не получилось сохранить результат для %s: %s', EEG.setname, ME.message);
         end
 
         clear EEG EEG_updated;

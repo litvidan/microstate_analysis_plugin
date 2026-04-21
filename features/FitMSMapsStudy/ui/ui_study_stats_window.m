@@ -1,172 +1,190 @@
 ﻿function ui_study_stats_window(study_data, template_name)
-    % Отображает усреднённую статистику по всему STUDY.
-    % study_data должен содержать поля:
-    %   .MSClass_all    - cell array матриц [n_epochs x n_points] меток классов
-    %   .times          - вектор времени (мс)
-    %   .n_classes      - количество классов
-    %   .event          - структура событий (из первого набора, опционально)
-    %   .setnames       - имена наборов (для справки)
-    %   .n_sets         - количество субъектов
-    %   .n_epochs       - количество эпох (должно быть одинаково)
-    %   .n_points       - количество точек на эпоху
-    %   .srate          - частота дискретизации
-    % template_name     - строка для заголовка (например, имя использованного шаблона)
-
-    if nargin < 2
-        template_name = 'Study';
-    end
+    if nargin < 2, template_name = 'Study'; end
 
     n_classes = study_data.n_classes;
     class_names = arrayfun(@(x) char(64+x), 1:n_classes, 'UniformOutput', false);
-    n_sets = study_data.n_sets;
-
-    % --- Вычисляем усреднённые покрытие и матрицу переходов (если ещё нет) ---
-    if ~isfield(study_data, 'global_coverage') || ~isfield(study_data, 'global_transitions')
-        cov_sum = zeros(1, n_classes);
-        trans_sum = zeros(n_classes);
-        for s = 1:n_sets
-            assign = study_data.MSClass_all{s};
-            cov_sum = cov_sum + logic_compute_coverage(assign, n_classes);
-            trans_sum = trans_sum + logic_compute_transitions(assign, n_classes);
-        end
-        study_data.global_coverage = cov_sum / n_sets;
-        study_data.global_transitions = trans_sum / n_sets;
-    end
-
-    % --- Создаём фигуру ---
     fig = figure('Name', sprintf('Статистика STUDY: %s', template_name), ...
         'NumberTitle', 'off', 'MenuBar', 'none', 'ToolBar', 'none', ...
-        'Position', [200 200 800 650], ...
-        'CloseRequestFcn', @close_fig);
-
-    % === 1. Панель переходов (усреднённая) ===
-    panel_height = 0.48;
-    panel_y = 0.50;
-    panel_width = 0.90;
-    left_margin = 0.05;
+        'Position', [100 100 950 750]);
     
-    h_panel_global = uipanel(fig, 'Units','normalized',...
-        'Position',[left_margin, panel_y, panel_width, panel_height],...
-        'Title','Переходы (усреднённые по группе)','FontSize',11);
-    uitable(h_panel_global, 'Units','normalized','Position',[0.05 0.05 0.9 0.9],...
+    setappdata(fig, 'study_data', study_data);
+    setappdata(fig, 'current_indices', 1:study_data.n_sets);
+    setappdata(fig, 'filter_values', struct());
+
+    % --- Панель фильтров ---
+    filter_panel = uipanel(fig, 'Units','normalized',...
+        'Position',[0.05, 0.92, 0.9, 0.08], 'Title','Фильтры','FontSize',11);
+    
+    var_names = fieldnames(study_data.filters);
+    n_vars = length(var_names);
+    if n_vars > 0
+        step = 0.9 / n_vars;
+        for iv = 1:n_vars
+            var_name = var_names{iv};
+            vals = study_data.filters.(var_name);
+            % vals уже должны быть cell-массивом строк, но на всякий случай проверим
+            if ~iscell(vals)
+                vals = cellstr(num2str(vals(:)));
+            end
+            unique_vals = unique(vals);
+            % Гарантируем, что все элементы — строки
+            unique_str = cellfun(@(x) char(x), unique_vals, 'UniformOutput', false);
+            items = [{'Все'}, unique_str];
+            x_pos = 0.05 + (iv-1)*step;
+            uicontrol(filter_panel, 'Style','text','String',[var_name ':'],'Units','normalized',...
+                'Position',[x_pos, 0.2, 0.12, 0.6], 'HorizontalAlignment','right');
+            uicontrol(filter_panel, 'Style','popupmenu','String',items,'Units','normalized',...
+                'Position',[x_pos+0.12, 0.2, 0.2, 0.6], 'Tag',['filter_' var_name], ...
+                'Callback', {@on_filter_change, fig});
+        end
+    else
+        uicontrol(filter_panel, 'Style','text','String','Нет переменных для фильтрации','Units','normalized',...
+            'Position',[0.05,0.2,0.9,0.6], 'HorizontalAlignment','center');
+    end
+    
+    % --- Панель переходов ---
+    trans_panel = uipanel(fig, 'Units','normalized',...
+        'Position',[0.05, 0.40, 0.9, 0.42], 'Title','Переходы (усреднённые по группе)','FontSize',11);
+    uitable(trans_panel, 'Units','normalized','Position',[0.05,0.05,0.9,0.9],...
         'ColumnName',class_names, 'RowName',class_names, ...
-        'Data',study_data.global_transitions, 'ColumnFormat',repmat({'numeric'},1,n_classes),...
+        'Data',zeros(n_classes), 'ColumnFormat',repmat({'numeric'},1,n_classes),...
         'ColumnEditable',false(1,n_classes), 'ColumnWidth',repmat({60},1,n_classes),...
         'FontSize',12, 'Tag','table_global');
-
-    % === 2. Панель покрытия ===
-    cov_panel_height = 0.12;
-    cov_panel_y = panel_y - cov_panel_height - 0.02;
-    h_panel_cov = uipanel(fig, 'Units','normalized',...
-        'Position',[left_margin, cov_panel_y, panel_width, cov_panel_height],...
-        'Title','Покрытие классов (%, среднее по группе)','FontSize',11);
     
-    cov_str = sprintf('Среднее: ');
-    for c = 1:n_classes
-        cov_str = [cov_str, sprintf('%s: %.1f%%  ', class_names{c}, study_data.global_coverage(c))];
-    end
-    uicontrol(h_panel_cov, 'Style','text','Units','normalized',...
-        'Position',[0.02 0.1 0.96 0.8],...
-        'HorizontalAlignment','left','FontSize',10,'String',cov_str,'Tag','text_cov');
-
-    % === 3. Панель метрик по событиям ===
-    event_panel_height = 0.28;
-    event_panel_y = 0.05;
-    h_panel_event = uipanel(fig, 'Units','normalized',...
-        'Position',[left_margin, event_panel_y, panel_width, event_panel_height],...
-        'Title','Метрики по событиям (средние по группе)','FontSize',11);
+    % --- Панель покрытия ---
+    cov_panel = uipanel(fig, 'Units','normalized',...
+        'Position',[0.05, 0.30, 0.9, 0.09], 'Title','Покрытие и кол-во наборов','FontSize',11);
+    uicontrol(cov_panel, 'Style','text', 'Units','normalized',...
+        'Position',[0.02,0.1,0.96,0.8], 'HorizontalAlignment','left', 'FontSize',10, ...
+        'String','', 'Tag','text_cov');
     
-    % Выпадающий список типов событий
-    if isfield(study_data, 'event') && ~isempty(study_data.event)
-        event_types = unique({study_data.event.type});
-        is_numeric = cellfun(@isnumeric, event_types);
-        event_types(is_numeric) = cellfun(@num2str, event_types(is_numeric), 'UniformOutput', false);
-    else
-        event_types = {'Нет событий'};
-    end
-    uicontrol(h_panel_event, 'Style','text','String','Тип события:','Units','normalized',...
-        'Position',[0.05 0.80 0.20 0.12],'HorizontalAlignment','left');
-    uicontrol(h_panel_event, 'Style','popupmenu', 'String',event_types, 'Tag','dropdown_event_type',...
-        'Units','normalized','Position',[0.27 0.80 0.30 0.12], ...
-        'Callback', {@update_stats, fig, study_data});
-    
-    % Поля ввода окна
-    uicontrol(h_panel_event, 'Style','text','String','Окно (мс):','Units','normalized',...
-        'Position',[0.60 0.80 0.15 0.12],'HorizontalAlignment','left');
-    uicontrol(h_panel_event, 'Style','edit', 'String','-200', 'Tag','edit_time_from',...
-        'Units','normalized','Position',[0.77 0.80 0.08 0.12], ...
-        'Callback', {@update_stats, fig, study_data});
-    uicontrol(h_panel_event, 'Style','edit', 'String','800', 'Tag','edit_time_to',...
-        'Units','normalized','Position',[0.87 0.80 0.08 0.12], ...
-        'Callback', {@update_stats, fig, study_data});
-    
-    % Таблица метрик
-    col_names = arrayfun(@(x) sprintf('Класс %c', char(64+x)), 1:n_classes, 'UniformOutput', false);
-    row_names = {'Частота (на стимул)', 'Длительность (мс)', 'Покрытие (%)'};
-    uitable(h_panel_event, 'Units','normalized','Position',[0.05 0.05 0.9 0.68],...
-        'ColumnName',col_names, 'RowName',row_names, 'Tag','table_event',...
-        'Data',zeros(3, n_classes), 'ColumnFormat',repmat({'numeric'},1,n_classes),...
-        'ColumnEditable',false(1,n_classes), 'ColumnWidth',repmat({80},1,n_classes));
+    % --- Панель метрик по событиям ---
+    event_panel = uipanel(fig, 'Units','normalized',...
+        'Position',[0.05, 0.05, 0.9, 0.24], 'Title','Метрики по событиям (средние по группе)','FontSize',11);
+    create_event_controls(event_panel, study_data, @(varargin) update_display(fig));
     
     % Первичное обновление
-    update_stats([], [], fig, study_data);
+    update_display(fig);
     
     % -------------------------------------------------------------------------
-    function update_stats(~, ~, fig, sdata)
-        dropdown = findobj(fig, 'Tag', 'dropdown_event_type');
-        edit_from = findobj(fig, 'Tag', 'edit_time_from');
-        edit_to = findobj(fig, 'Tag', 'edit_time_to');
-        table_event = findobj(fig, 'Tag', 'table_event');
-        if isempty(dropdown) || isempty(table_event)
+    function on_filter_change(~, ~, fig)
+        study_data = getappdata(fig, 'study_data');
+        var_names = fieldnames(study_data.filters);
+        selected_indices = 1:study_data.n_sets;
+        for iv = 1:length(var_names)
+            var_name = var_names{iv};
+            filter_control = findobj(fig, 'Tag', ['filter_' var_name]);
+            if isempty(filter_control), continue; end
+            items = get(filter_control, 'String');
+            val = get(filter_control, 'Value');
+            if val > 1
+                selected_item = items{val};
+                var_vals = study_data.filters.(var_name);
+                if ~iscell(var_vals)
+                    var_vals = cellstr(num2str(var_vals(:)));
+                end
+                is_match = strcmp(var_vals, selected_item);
+                selected_indices = intersect(selected_indices, find(is_match));
+            end
+        end
+        if isempty(selected_indices)
+            selected_indices = 1:study_data.n_sets;
+            warndlg('Нет совпадения с данным набором фильтров. Отображение по всем наборам.', 'Фильтрация');
+        end
+        setappdata(fig, 'current_indices', selected_indices);
+        update_display(fig);
+    end
+    
+    function create_event_controls(panel, sdata, callback)
+        if isfield(sdata, 'event') && ~isempty(sdata.event)
+            raw_types = {sdata.event.type};
+            event_types = cellfun(@(x) num2str(x), raw_types, 'UniformOutput', false);
+            event_types = unique(event_types);
+        else
+            event_types = {'Нет событий'};
+        end
+        
+        uicontrol(panel, 'Style','text','String','Тип события:','Units','normalized',...
+            'Position',[0.05,0.80,0.20,0.12],'HorizontalAlignment','left');
+        uicontrol(panel, 'Style','popupmenu','String',event_types,'Tag','dropdown_event_type',...
+            'Units','normalized','Position',[0.27,0.80,0.30,0.12],'Callback',callback);
+        
+        uicontrol(panel, 'Style','text','String','Окно (мс):','Units','normalized',...
+            'Position',[0.60,0.80,0.15,0.12],'HorizontalAlignment','left');
+        uicontrol(panel, 'Style','edit','String','-200','Tag','edit_time_from',...
+            'Units','normalized','Position',[0.77,0.80,0.08,0.12],'Callback',callback);
+        uicontrol(panel, 'Style','edit','String','800','Tag','edit_time_to',...
+            'Units','normalized','Position',[0.87,0.80,0.08,0.12],'Callback',callback);
+        
+        col_names = arrayfun(@(x) sprintf('Класс %c',char(64+x)), 1:sdata.n_classes,'UniformOutput',false);
+        row_names = {'Частота (на стимул)','Длительность (мс)','Покрытие (%)'};
+        uitable(panel, 'Units','normalized','Position',[0.05,0.05,0.9,0.68],...
+            'ColumnName',col_names,'RowName',row_names,'Tag','table_event',...
+            'Data',zeros(3,sdata.n_classes),'ColumnEditable',false(1,sdata.n_classes));
+    end
+    
+    function update_display(fig)
+        sdata = getappdata(fig, 'study_data');
+        idx = getappdata(fig, 'current_indices');
+        if isempty(idx), idx = 1:sdata.n_sets; end
+        idx = idx(idx >= 1 & idx <= sdata.n_sets);
+        if isempty(idx), idx = 1:sdata.n_sets; end
+        
+        n_sel = length(idx);
+        if n_sel == 0
+            set(findobj(fig,'Tag','table_global'), 'Data', zeros(sdata.n_classes));
+            set(findobj(fig,'Tag','text_cov'), 'String', 'Нет данных для выбранных фильтров');
+            set(findobj(fig,'Tag','table_event'), 'Data', zeros(3, sdata.n_classes));
             return;
         end
         
-        event_type_list = get(dropdown, 'String');
-        selected_idx = get(dropdown, 'Value');
-        event_type = event_type_list{selected_idx};
-        time_from = str2double(get(edit_from, 'String'));
-        time_to = str2double(get(edit_to, 'String'));
+        % Покрытие и переходы
+        cov_sum = zeros(1, sdata.n_classes);
+        trans_sum = zeros(sdata.n_classes);
+        for i = idx
+            assign = sdata.MSClass_all{i};
+            cov_sum = cov_sum + logic_compute_coverage(assign, sdata.n_classes);
+            trans_sum = trans_sum + logic_compute_transitions(assign, sdata.n_classes);
+        end
+        avg_cov = cov_sum / n_sel;
+        avg_trans = trans_sum / n_sel;
+        set(findobj(fig,'Tag','table_global'), 'Data', avg_trans);
         
-        % Вычисляем групповые метрики
-        metrics = compute_group_event_metrics(sdata, event_type, time_from, time_to);
-        formatted_metrics = arrayfun(@(x) sprintf('%.2f', x), metrics, 'UniformOutput', false);
-        set(table_event, 'Data', formatted_metrics);
+        cov_str = 'Среднее покрытие: ';
+        for c = 1:sdata.n_classes
+            cov_str = [cov_str, sprintf('%s: %.1f%%  ', char(64+c), avg_cov(c))];
+        end
+        set(findobj(fig,'Tag','text_cov'), 'String', sprintf('Наборов в выборке: %d\n%s', n_sel, cov_str));
         
-        % debug print
-        fprintf('Metrics for %s: freq = %s, dur = %s, cov = %s\n', ...
-            event_type, mat2str(metrics(1,:),3), mat2str(metrics(2,:),3), mat2str(metrics(3,:),3));
-    end
-    
-    function metrics = compute_group_event_metrics(sdata, event_type, time_from, time_to)
-        % Вызывает logic_calculate_event_metrics для каждого субъекта и усредняет
-        n_sets = sdata.n_sets;
-        n_classes = sdata.n_classes;
-        metrics_sum = zeros(3, n_classes);
-        
-        % Создаём базовую структуру ud (общую для всех)
-        ud_base = struct();
-        ud_base.Time = sdata.times;
-        ud_base.nClasses = n_classes;
-        ud_base.event = sdata.event;  % события одинаковы для всех
-        ud_base.Assignment = [];      % будет подставлен для каждого субъекта
-        
-        for s = 1:n_sets
-            ud = ud_base;
-            ud.Assignment = sdata.MSClass_all{s}(:);  % вектор всех меток
-            metrics_ind = logic_calculate_event_metrics(ud, event_type, time_from, time_to);
-            
-            % debug print
-            fprintf('Metrics for %s: freq = %s, dur = %s, cov = %s\n', ...
-                event_type, mat2str(metrics_ind(1,:),3), mat2str(metrics_ind(2,:),3), mat2str(metrics_ind(3,:),3));
-
-            if ~isempty(metrics_ind)
-                metrics_sum = metrics_sum + metrics_ind;
+        % Метрики по событиям
+        dropdown = findobj(fig,'Tag','dropdown_event_type');
+        if ~isempty(dropdown)
+            ev_list = get(dropdown,'String');
+            ev_sel = get(dropdown,'Value');
+            if ev_sel <= length(ev_list)
+                ev_type = ev_list{ev_sel};
+                t_from = str2double(get(findobj(fig,'Tag','edit_time_from'),'String'));
+                t_to   = str2double(get(findobj(fig,'Tag','edit_time_to'),'String'));
+                if ~isnan(t_from) && ~isnan(t_to)
+                    metrics = compute_group_event_metrics(sdata, idx, ev_type, t_from, t_to);
+                    set(findobj(fig,'Tag','table_event'), 'Data', metrics);
+                end
             end
         end
-        metrics = metrics_sum / n_sets;
     end
     
-    function close_fig(~, ~)
-        delete(fig);
+    function metrics = compute_group_event_metrics(sdata, idx, ev_type, t_from, t_to)
+        n_classes = sdata.n_classes;
+        sum_metrics = zeros(3, n_classes);
+        ud_base.Time = sdata.times;
+        ud_base.nClasses = n_classes;
+        ud_base.event = sdata.event;
+        for i = idx
+            ud = ud_base;
+            ud.Assignment = sdata.MSClass_all{i}(:);
+            m = logic_calculate_event_metrics(ud, ev_type, t_from, t_to);
+            if ~isempty(m), sum_metrics = sum_metrics + m; end
+        end
+        metrics = sum_metrics / length(idx);
     end
 end

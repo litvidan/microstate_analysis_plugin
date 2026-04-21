@@ -17,17 +17,17 @@
     com = '';
     global MSTATES_TEMPLATES;
 
-    % Load configuration
+    % Загрузка конфигурации
     plugin_path = fileparts(mfilename('fullpath'));
     config_file = fullfile(plugin_path, '..', 'FitMSMaps', 'fit_config.json');
     try
         config = jsondecode(fileread(config_file));
     catch ME
-        errordlg(sprintf('Error reading configuration file: %s', ME.message), 'Configuration Error');
+        errordlg(sprintf('Ошибка загрузки конфигурационного файла: %s', ME.message), 'Configuration Error');
         return;
     end
 
-    % UI: select template
+    % UI: выбор шаблона
     [template_source, template_EEG, canceled] = ui_select_template_for_study(STUDY, ALLEEG, MSTATES_TEMPLATES);
     if canceled
         return;
@@ -42,10 +42,10 @@
 
     % Report summary
     total = length(STUDY.datasetinfo);
-    fprintf('\n=== Study Backfitting Summary ===\n');
-    fprintf('Successfully processed: %d / %d\n', success_count, total);
+    fprintf('\n=== Обобщение присвоения ===\n');
+    fprintf('Успешно обработаны: %d / %d\n', success_count, total);
     if ~isempty(failed_files)
-        fprintf('Failed datasets:\n');
+        fprintf('Провальные датасеты:\n');
         for f = 1:length(failed_files)
             fprintf('  - %s\n', failed_files{f});
         end
@@ -53,9 +53,9 @@
 
     % После успешного backfitting, в конце функции pop_FitMSMapsStudy_simple.m:
     if success_count > 0
-        answer = questdlg('Backfitting completed. Show aggregated statistics for the STUDY?', ...
-                          'Study Statistics', 'Yes', 'No', 'Yes');
-        if strcmp(answer, 'Yes')
+        answer = questdlg('Присвоение завершено. Показать усреднённую статистику для STUDY?', ...
+                          'Study статистика', 'Да', 'Нет', 'Да');
+        if strcmp(answer, 'Да')
             try
                 % Загружаем все результаты
                 study_data = logic_load_study_data(STUDY);
@@ -67,7 +67,7 @@
                 % Отображаем окно
                 ui_study_stats_window(study_data, template_source);
             catch ME
-                errordlg(sprintf('Error displaying study statistics:\n%s', ME.message), 'Display Error');
+                errordlg(sprintf('Ошибка отображения статистикиs:\n%s', ME.message), 'Ошибка');
             end
         end
     end

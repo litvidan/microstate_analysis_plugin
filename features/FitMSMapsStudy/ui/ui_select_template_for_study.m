@@ -25,19 +25,19 @@
     end
     
     % Add 'own' as first option
-    all_sources_cell = [{'own'}, mean_names, pub_names];
+    all_sources_cell = [{'Собственные карты каждого набора'}, mean_names, pub_names];
     if length(all_sources_cell) == 1
-        errordlg('No available templates found (no mean sets, no public templates).', 'Template Error');
+        errordlg('Доступные шаблоны не обнаружены', 'Template Error');
         canceled = true;
         return;
     end
     
-    % Build UI
+    % Отрисовка UI
     geometry = {[1 1]};
     geomvert = [1];
-    uilist = {{'Style', 'text', 'string', 'Select template source for backfitting:'}, ...
+    uilist = {{'Style', 'text', 'string', 'Выберите набор карт:'}, ...
               {'Style', 'popupmenu', 'string', strjoin(all_sources_cell, '|'), 'tag', 'TemplateChoice'}};
-    title = 'Select Microstate Template';
+    title = 'Выберите шаблонные карты';
     
     [res, ~, ~, out] = inputgui('geometry', geometry, 'geomvert', geomvert, 'uilist', uilist, 'title', title);
     if isempty(res)

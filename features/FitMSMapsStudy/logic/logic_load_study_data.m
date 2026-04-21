@@ -1,10 +1,5 @@
 ﻿function [study_data, failed_sets] = logic_load_study_data(STUDY, suffix)
-    % logic_load_study_data - Load backfitting results for all datasets in a STUDY.
-    % (исправленная версия)
-
-    if nargin < 2
-        suffix = '_ms_dynamics';
-    end
+    if nargin < 2, suffix = '_ms_dynamics'; end
 
     n_datasets = length(STUDY.datasetinfo);
     study_data = struct();
@@ -13,9 +8,10 @@
     study_data.MSStats_all = {};
     study_data.GFP_all = {};
     study_data.setnames = {};
+    study_data.filters = struct();
+    study_data.successful_indices = [];
     failed_sets = {};
 
-    n_epochs_ref = [];
     n_points_ref = [];
     times_ref = [];
     srate_ref = [];
@@ -23,13 +19,11 @@
     for i = 1:n_datasets
         dinfo = STUDY.datasetinfo(i);
         result_file = fullfile(dinfo.filepath, [dinfo.filename(1:end-4) suffix '.mat']);
-        
         if ~exist(result_file, 'file')
             warning('Result file not found: %s', result_file);
             failed_sets{end+1} = dinfo.filename;
             continue;
         end
-        
         try
             data = load(result_file);
             if ~isfield(data, 'results') || ~isfield(data.results, 'success') || ~data.results.success
@@ -37,79 +31,41 @@
                 failed_sets{end+1} = dinfo.filename;
                 continue;
             end
-            
             res = data.results;
             
-            % ---- Установка эталонных параметров от первого УСПЕШНОГО набора ----
-            if isempty(n_epochs_ref)
-                % первый успешно загруженный набор задаёт эталон
-                n_epochs_ref = res.n_epochs;
+            if isempty(n_points_ref)
                 n_points_ref = res.n_points;
                 times_ref = res.times;
                 srate_ref = res.srate;
             else
-                % проверка совместимости с эталоном
-                incompatible = false;
-                msg = {};
-                if res.n_epochs ~= n_epochs_ref
-                    incompatible = true;
-                    msg{end+1} = sprintf('n_epochs: %d (ref) vs %d (current)', n_epochs_ref, res.n_epochs);
-                end
-                if res.n_points ~= n_points_ref
-                    incompatible = true;
-                    msg{end+1} = sprintf('n_points: %d (ref) vs %d (current)', n_points_ref, res.n_points);
-                end
-                if length(res.times) ~= length(times_ref) || any(abs(res.times - times_ref) > 1e-6)
-                    incompatible = true;
-                    if length(res.times) ~= length(times_ref)
-                        msg{end+1} = sprintf('times length: %d (ref) vs %d (current)', length(times_ref), length(res.times));
-                    else
-                        diff_max = max(abs(res.times - times_ref));
-                        msg{end+1} = sprintf('times values differ (max diff = %g ms)', diff_max);
-                    end
-                end
-                if res.srate ~= srate_ref
-                    incompatible = true;
-                    msg{end+1} = sprintf('srate: %g (ref) vs %g (current)', srate_ref, res.srate);
-                end
-                
-                if incompatible
-                    warning('Dataset %s has incompatible structure:\n  %s', dinfo.filename, strjoin(msg, '\n  '));
+                if res.n_points ~= n_points_ref || res.srate ~= srate_ref
+                    warning('Dataset %s has incompatible epoch structure. Skipping.', dinfo.filename);
                     failed_sets{end+1} = dinfo.filename;
                     continue;
                 end
             end
             
-            % ---- Хранение MSClass в правильном формате [n_points x n_epochs] ----
             msclass = res.MSClass;
             if isvector(msclass)
-                % вектор -> матрица [n_points x n_epochs]
-                msclass = reshape(msclass, n_points_ref, n_epochs_ref);
-            else
-                % уже матрица, проверяем ориентацию
-                if size(msclass, 1) ~= n_points_ref
-                    % если строки не равны n_points, пробуем транспонировать
-                    if size(msclass, 2) == n_points_ref
-                        msclass = msclass';
-                    else
-                        warning('Dataset %s: unexpected MSClass size [%d,%d]', dinfo.filename, size(msclass,1), size(msclass,2));
-                        failed_sets{end+1} = dinfo.filename;
-                        continue;
-                    end
+                if numel(msclass) ~= (res.n_points * res.n_epochs)
+                    warning('Dataset %s: Mismatch in MSClass size.', dinfo.filename);
+                    failed_sets{end+1} = dinfo.filename;
+                    continue;
                 end
+                msclass = reshape(msclass, res.n_points, res.n_epochs);
             end
+            
             study_data.MSClass_all{end+1} = msclass;
             study_data.MSStats_all{end+1} = res.MSStats;
             study_data.setnames{end+1} = dinfo.filename;
             study_data.n_sets = study_data.n_sets + 1;
+            study_data.successful_indices(end+1) = i;
             
-            % GFP (если есть)
             if isfield(res.MSStats, 'GFP')
                 study_data.GFP_all{end+1} = res.MSStats.GFP;
             else
                 study_data.GFP_all{end+1} = [];
             end
-            
         catch ME
             warning('Error loading %s: %s', result_file, ME.message);
             failed_sets{end+1} = dinfo.filename;
@@ -120,8 +76,23 @@
         error('No valid datasets found.');
     end
     
-    % Добавляем события из первого набора (если нужно)
-    dinfo = STUDY.datasetinfo(1);
+    % --- Сохраняем значения переменных фильтрации (всегда как строки) ---
+    possible_vars = {'subject', 'session', 'run', 'condition', 'group'};
+    for v = 1:length(possible_vars)
+        var_name = possible_vars{v};
+        if isfield(STUDY.datasetinfo, var_name)
+            raw_vals = {STUDY.datasetinfo.(var_name)};
+            if ~isempty(raw_vals) && any(~cellfun(@isempty, raw_vals))
+                % Преобразуем всё в строки
+                str_vals = cellfun(@(x) num2str(x), raw_vals, 'UniformOutput', false);
+                study_data.filters.(var_name) = str_vals(study_data.successful_indices);
+            end
+        end
+    end
+    
+    % События из первого успешного набора
+    first_idx = study_data.successful_indices(1);
+    dinfo = STUDY.datasetinfo(first_idx);
     EEG_first = pop_loadset('filename', dinfo.filename, 'filepath', dinfo.filepath);
     if ~isempty(EEG_first) && isfield(EEG_first, 'event')
         study_data.event = EEG_first.event;
