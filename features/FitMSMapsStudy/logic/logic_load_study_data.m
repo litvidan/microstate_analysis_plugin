@@ -10,11 +10,13 @@
     study_data.setnames = {};
     study_data.filters = struct();
     study_data.successful_indices = [];
+    study_data.MSMaps = []; % Initialize MSMaps field
     failed_sets = {};
 
     n_points_ref = [];
     times_ref = [];
     srate_ref = [];
+    maps_loaded = false; % Flag to check if maps are loaded
 
     for i = 1:n_datasets
         dinfo = STUDY.datasetinfo(i);
@@ -43,6 +45,16 @@
                     failed_sets{end+1} = dinfo.filename;
                     continue;
                 end
+            end
+            
+            if ~maps_loaded
+                if isfield(res, 'MSMaps')
+                    study_data.MSMaps = res.MSMaps;
+                end
+                if isfield(res, 'chanlocs')
+                    study_data.chanlocs = res.chanlocs;
+                end
+                maps_loaded = true;
             end
             
             msclass = res.MSClass;
@@ -90,7 +102,7 @@
         end
     end
     
-    % События из первого успешного набора
+    % События и chanlocs из первого успешного набора
     first_idx = study_data.successful_indices(1);
     dinfo = STUDY.datasetinfo(first_idx);
     EEG_first = pop_loadset('filename', dinfo.filename, 'filepath', dinfo.filepath);

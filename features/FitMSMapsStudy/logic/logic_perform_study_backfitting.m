@@ -65,6 +65,13 @@
         if success
             results.MSClass = EEG_updated.msinfo.MSStats(n_classes).MSClass;
             results.MSStats = EEG_updated.msinfo.MSStats(n_classes);
+            if ~strcmp(template_source, 'own')
+                results.MSMaps = template_EEG.msinfo.MSMaps(n_classes);
+                results.chanlocs = template_EEG.chanlocs;
+            else
+                results.MSMaps = EEG_updated.msinfo.MSMaps(n_classes);
+                results.chanlocs = EEG_updated.chanlocs;
+            end
             success_count = success_count + 1;
         else
             warning('Присвоение не удалось для %s, пропускаю.', EEG.setname);

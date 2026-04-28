@@ -5,15 +5,19 @@
     class_names = arrayfun(@(x) char(64+x), 1:n_classes, 'UniformOutput', false);
     fig = figure('Name', sprintf('Статистика STUDY: %s', template_name), ...
         'NumberTitle', 'off', 'MenuBar', 'none', 'ToolBar', 'none', ...
-        'Position', [100 100 950 750]);
+        'Position', [100 100 950 850]);
     
     setappdata(fig, 'study_data', study_data);
     setappdata(fig, 'current_indices', 1:study_data.n_sets);
     setappdata(fig, 'filter_values', struct());
 
-    % --- Панель фильтров ---
+    % --- Map Panel ---
+    map_panel = uipanel(fig, 'Units','normalized',...
+        'Position',[0.05, 0.80, 0.9, 0.18], 'Title','Карты микросостояний','FontSize',11);
+
+    % --- Filter Panel (без изменений) ---
     filter_panel = uipanel(fig, 'Units','normalized',...
-        'Position',[0.05, 0.92, 0.9, 0.08], 'Title','Фильтры','FontSize',11);
+        'Position',[0.05, 0.70, 0.9, 0.08], 'Title','Фильтры','FontSize',11);
     
     var_names = fieldnames(study_data.filters);
     n_vars = length(var_names);
@@ -22,12 +26,8 @@
         for iv = 1:n_vars
             var_name = var_names{iv};
             vals = study_data.filters.(var_name);
-            % vals уже должны быть cell-массивом строк, но на всякий случай проверим
-            if ~iscell(vals)
-                vals = cellstr(num2str(vals(:)));
-            end
+            if ~iscell(vals), vals = cellstr(num2str(vals(:))); end
             unique_vals = unique(vals);
-            % Гарантируем, что все элементы — строки
             unique_str = cellfun(@(x) char(x), unique_vals, 'UniformOutput', false);
             items = [{'Все'}, unique_str];
             x_pos = 0.05 + (iv-1)*step;
@@ -42,31 +42,72 @@
             'Position',[0.05,0.2,0.9,0.6], 'HorizontalAlignment','center');
     end
     
-    % --- Панель переходов ---
+    % --- Transitions Panel (без изменений) ---
     trans_panel = uipanel(fig, 'Units','normalized',...
-        'Position',[0.05, 0.40, 0.9, 0.42], 'Title','Переходы (усреднённые по группе)','FontSize',11);
+        'Position',[0.05, 0.35, 0.9, 0.33], 'Title','Переходы (усреднённые по группе)','FontSize',11);
     uitable(trans_panel, 'Units','normalized','Position',[0.05,0.05,0.9,0.9],...
         'ColumnName',class_names, 'RowName',class_names, ...
         'Data',zeros(n_classes), 'ColumnFormat',repmat({'numeric'},1,n_classes),...
         'ColumnEditable',false(1,n_classes), 'ColumnWidth',repmat({60},1,n_classes),...
         'FontSize',12, 'Tag','table_global');
     
-    % --- Панель покрытия ---
+    % --- Coverage Panel (без изменений) ---
     cov_panel = uipanel(fig, 'Units','normalized',...
-        'Position',[0.05, 0.30, 0.9, 0.09], 'Title','Покрытие и кол-во наборов','FontSize',11);
+        'Position',[0.05, 0.25, 0.9, 0.09], 'Title','Покрытие и кол-во наборов','FontSize',11);
     uicontrol(cov_panel, 'Style','text', 'Units','normalized',...
         'Position',[0.02,0.1,0.96,0.8], 'HorizontalAlignment','left', 'FontSize',10, ...
         'String','', 'Tag','text_cov');
     
-    % --- Панель метрик по событиям ---
+    % --- Event Metrics Panel (без изменений) ---
     event_panel = uipanel(fig, 'Units','normalized',...
-        'Position',[0.05, 0.05, 0.9, 0.24], 'Title','Метрики по событиям (средние по группе)','FontSize',11);
+        'Position',[0.05, 0.05, 0.9, 0.19], 'Title','Метрики по событиям (средние по группе)','FontSize',11);
     create_event_controls(event_panel, study_data, @(varargin) update_display(fig));
     
+    % --- Plot Maps (упрощённый, без PlotMSMaps) ---
+    if isfield(study_data, 'MSMaps') && ~isempty(study_data.MSMaps) && ...
+    isfield(study_data, 'chanlocs') && ~isempty(study_data.chanlocs)
+    
+    % Очищаем панель от старых элементов
+    delete(get(map_panel, 'Children'));
+    
+    % Создаём tiled layout: 1 строка, n_classes столбцов
+    tlayout = tiledlayout(map_panel, 1, n_classes, 'TileSpacing', 'compact', 'Padding', 'compact');
+    
+    maps_data = study_data.MSMaps;        % структура для n_classes классов
+    chanlocs = study_data.chanlocs;
+    X = [chanlocs.X];
+    Y = [chanlocs.Y];
+    Z = [chanlocs.Z];
+    
+    for c = 1:n_classes
+       ax = nexttile(tlayout);
+       % Вектор карты для класса c
+       map_vec = maps_data.Maps(c, :);
+       % Фоновый цвет (если есть)
+       if isfield(maps_data, 'ColorMap') && size(maps_data.ColorMap, 1) >= c
+           bg = maps_data.ColorMap(c, :);
+       else
+           bg = [0.8 0.8 0.8];
+       end
+       % Отрисовка карты (функция из плагина microstate)
+       dspCMap3(ax, map_vec, [X; Y; Z], 'NoScale', 'Resolution', 2, 'Background', bg, 'ShowNose', 15);
+       % Заголовок (метка класса)
+       if isfield(maps_data, 'Labels') && length(maps_data.Labels) >= c
+           title(ax, maps_data.Labels{c}, 'FontSize', 9, 'Interpreter', 'none');
+       else
+           title(ax, sprintf('Class %c', char(64+c)), 'FontSize', 9);
+       end
+       ax.Toolbar.Visible = 'off';
+    end
+    else
+    uicontrol(map_panel, 'Style','text','String','Данные о картах или каналах не найдены.',...
+       'Units','normalized','Position',[0.1 0.4 0.8 0.2]);
+    end
+
     % Первичное обновление
     update_display(fig);
     
-    % -------------------------------------------------------------------------
+    % --- Вспомогательные функции (без изменений) ---
     function on_filter_change(~, ~, fig)
         study_data = getappdata(fig, 'study_data');
         var_names = fieldnames(study_data.filters);
@@ -138,7 +179,6 @@
             return;
         end
         
-        % Покрытие и переходы
         cov_sum = zeros(1, sdata.n_classes);
         trans_sum = zeros(sdata.n_classes);
         for i = idx
@@ -156,7 +196,6 @@
         end
         set(findobj(fig,'Tag','text_cov'), 'String', sprintf('Наборов в выборке: %d\n%s', n_sel, cov_str));
         
-        % Метрики по событиям
         dropdown = findobj(fig,'Tag','dropdown_event_type');
         if ~isempty(dropdown)
             ev_list = get(dropdown,'String');
