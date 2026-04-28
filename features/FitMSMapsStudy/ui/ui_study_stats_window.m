@@ -10,14 +10,20 @@
     setappdata(fig, 'study_data', study_data);
     setappdata(fig, 'current_indices', 1:study_data.n_sets);
     setappdata(fig, 'filter_values', struct());
+    setappdata(fig, 'export_stats', []); % для хранения экспортируемых данных
 
-    % --- Map Panel ---
+    % --- Panel for maps (unchanged) ---
     map_panel = uipanel(fig, 'Units','normalized',...
         'Position',[0.05, 0.80, 0.9, 0.18], 'Title','Карты микросостояний','FontSize',11);
 
-    % --- Filter Panel (без изменений) ---
+    % --- Filter Panel (unchanged) ---
     filter_panel = uipanel(fig, 'Units','normalized',...
         'Position',[0.05, 0.70, 0.9, 0.08], 'Title','Фильтры','FontSize',11);
+    
+    % --- Export button ---
+    uicontrol(filter_panel, 'Style','pushbutton', 'String','Экспорт в Excel/CSV', ...
+        'Units','normalized', 'Position',[0.85, 0.2, 0.14, 0.6], ...
+        'Callback', {@export_stats_callback, fig});
     
     var_names = fieldnames(study_data.filters);
     n_vars = length(var_names);
@@ -42,7 +48,7 @@
             'Position',[0.05,0.2,0.9,0.6], 'HorizontalAlignment','center');
     end
     
-    % --- Transitions Panel (без изменений) ---
+    % --- Transitions Panel (unchanged) ---
     trans_panel = uipanel(fig, 'Units','normalized',...
         'Position',[0.05, 0.35, 0.9, 0.33], 'Title','Переходы (усреднённые по группе)','FontSize',11);
     uitable(trans_panel, 'Units','normalized','Position',[0.05,0.05,0.9,0.9],...
@@ -51,63 +57,124 @@
         'ColumnEditable',false(1,n_classes), 'ColumnWidth',repmat({60},1,n_classes),...
         'FontSize',12, 'Tag','table_global');
     
-    % --- Coverage Panel (без изменений) ---
+    % --- Coverage Panel (unchanged) ---
     cov_panel = uipanel(fig, 'Units','normalized',...
         'Position',[0.05, 0.25, 0.9, 0.09], 'Title','Покрытие и кол-во наборов','FontSize',11);
     uicontrol(cov_panel, 'Style','text', 'Units','normalized',...
         'Position',[0.02,0.1,0.96,0.8], 'HorizontalAlignment','left', 'FontSize',10, ...
         'String','', 'Tag','text_cov');
     
-    % --- Event Metrics Panel (без изменений) ---
+    % --- Event Metrics Panel (unchanged) ---
     event_panel = uipanel(fig, 'Units','normalized',...
-        'Position',[0.05, 0.05, 0.9, 0.19], 'Title','Метрики по событиям (средние по группе)','FontSize',11);
+        'Position',[0.05, 0.08, 0.9, 0.16], 'Title','Метрики по событиям (средние по группе)','FontSize',11);
     create_event_controls(event_panel, study_data, @(varargin) update_display(fig));
     
-    % --- Plot Maps (упрощённый, без PlotMSMaps) ---
+    % --- Button Panel (export) ---
+    button_panel = uipanel(fig, 'Units','normalized',...
+        'Position',[0.05, 0.01, 0.9, 0.05], 'BorderType','none');
+    uicontrol(button_panel, 'Style','pushbutton', 'String','Экспорт в Excel/CSV', ...
+        'Units','normalized', 'Position',[0.85, 0.1, 0.14, 0.8], ...
+        'Callback', {@(~,~) logic_export_study_stats(fig, template_name)});
+    
+    % --- Plot Maps (simplified, as before) ---
     if isfield(study_data, 'MSMaps') && ~isempty(study_data.MSMaps) && ...
-    isfield(study_data, 'chanlocs') && ~isempty(study_data.chanlocs)
-    
-    % Очищаем панель от старых элементов
-    delete(get(map_panel, 'Children'));
-    
-    % Создаём tiled layout: 1 строка, n_classes столбцов
-    tlayout = tiledlayout(map_panel, 1, n_classes, 'TileSpacing', 'compact', 'Padding', 'compact');
-    
-    maps_data = study_data.MSMaps;        % структура для n_classes классов
-    chanlocs = study_data.chanlocs;
-    X = [chanlocs.X];
-    Y = [chanlocs.Y];
-    Z = [chanlocs.Z];
-    
-    for c = 1:n_classes
-       ax = nexttile(tlayout);
-       % Вектор карты для класса c
-       map_vec = maps_data.Maps(c, :);
-       % Фоновый цвет (если есть)
-       if isfield(maps_data, 'ColorMap') && size(maps_data.ColorMap, 1) >= c
-           bg = maps_data.ColorMap(c, :);
-       else
-           bg = [0.8 0.8 0.8];
-       end
-       % Отрисовка карты (функция из плагина microstate)
-       dspCMap3(ax, map_vec, [X; Y; Z], 'NoScale', 'Resolution', 2, 'Background', bg, 'ShowNose', 15);
-       % Заголовок (метка класса)
-       if isfield(maps_data, 'Labels') && length(maps_data.Labels) >= c
-           title(ax, maps_data.Labels{c}, 'FontSize', 9, 'Interpreter', 'none');
-       else
-           title(ax, sprintf('Class %c', char(64+c)), 'FontSize', 9);
-       end
-       ax.Toolbar.Visible = 'off';
-    end
+       isfield(study_data, 'chanlocs') && ~isempty(study_data.chanlocs)
+        delete(get(map_panel, 'Children'));
+        tlayout = tiledlayout(map_panel, 1, n_classes, 'TileSpacing', 'compact', 'Padding', 'compact');
+        maps_data = study_data.MSMaps;
+        chanlocs = study_data.chanlocs;
+        X = [chanlocs.X];
+        Y = [chanlocs.Y];
+        Z = [chanlocs.Z];
+        for c = 1:n_classes
+            ax = nexttile(tlayout);
+            map_vec = maps_data.Maps(c, :);
+            if isfield(maps_data, 'ColorMap') && size(maps_data.ColorMap, 1) >= c
+                bg = maps_data.ColorMap(c, :);
+            else
+                bg = [0.8 0.8 0.8];
+            end
+            dspCMap3(ax, map_vec, [X; Y; Z], 'NoScale', 'Resolution', 2, 'Background', bg, 'ShowNose', 15);
+            if isfield(maps_data, 'Labels') && length(maps_data.Labels) >= c
+                title(ax, maps_data.Labels{c}, 'FontSize', 9, 'Interpreter', 'none');
+            else
+                title(ax, sprintf('Class %c', char(64+c)), 'FontSize', 9);
+            end
+            ax.Toolbar.Visible = 'off';
+        end
     else
-    uicontrol(map_panel, 'Style','text','String','Данные о картах или каналах не найдены.',...
-       'Units','normalized','Position',[0.1 0.4 0.8 0.2]);
+        uicontrol(map_panel, 'Style','text','String','Данные о картах или каналах не найдены.',...
+            'Units','normalized','Position',[0.1 0.4 0.8 0.2]);
     end
 
-    % Первичное обновление
+    % Initial update
     update_display(fig);
     
-    % --- Вспомогательные функции (без изменений) ---
+    % -------------------------------------------------------------------------
+    function export_stats_callback(~, ~, fig)
+        export_data = getappdata(fig, 'export_stats');
+        if isempty(export_data)
+            warndlg('Нет данных для экспорта. Сначала примените фильтры.', 'Экспорт');
+            return;
+        end
+        
+        % Формируем имя файла по умолчанию
+        default_name = sprintf('study_statistics_%s.xlsx', datestr(now, 'yyyymmdd_HHMMSS'));
+        [file, path] = uiputfile({'*.xlsx', 'Excel files (*.xlsx)'; '*.csv', 'CSV files (*.csv)'}, ...
+                                 'Сохранить статистику', default_name);
+        if isequal(file, 0), return; end
+        fullpath = fullfile(path, file);
+        
+        % Подготовка данных
+        cov_data = array2table(export_data.coverage, 'VariableNames', class_names, 'RowNames', {'Coverage (%)'});
+        trans_data = array2table(export_data.transitions, 'VariableNames', class_names, 'RowNames', class_names);
+        event_data = array2table(export_data.event_metrics, ...
+            'VariableNames', class_names, ...
+            'RowNames', {'Frequency (per event)','Duration (ms)','Coverage (%)'});
+        
+        % Информация о фильтрах
+        filter_info = export_data.filter_info;
+        info_cell = {'Parameter', 'Value'; ...
+                     'Number of datasets', num2str(export_data.n_selected); ...
+                     'Template', template_name};
+        for i = 1:length(filter_info.names)
+            info_cell{end+1, 1} = filter_info.names{i};
+            info_cell{end, 2} = filter_info.values{i};
+        end
+        
+        % Запись в Excel (или CSV)
+        [~,~,ext] = fileparts(fullpath);
+        if strcmpi(ext, '.xlsx')
+            % Сохраняем в один Excel файл с разными листами
+            writetable(cov_data, fullpath, 'Sheet', 'Coverage', 'WriteRowNames', true);
+            writetable(trans_data, fullpath, 'Sheet', 'Transitions', 'WriteRowNames', true);
+            writetable(event_data, fullpath, 'Sheet', 'EventMetrics', 'WriteRowNames', true);
+            writecell(info_cell, fullpath, 'Sheet', 'Info');
+            fprintf('Статистика сохранена в %s\n', fullpath);
+        else
+            % CSV сохраняем каждый отдельный лист как отдельный файл? Неудобно. Лучше один CSV с разделителями.
+            % Для простоты сохраним один CSV файл с объединёнными таблицами (менее удобно, но работает).
+            % Предлагаем сохранить как CSV с несколькими секциями.
+            fid = fopen(fullpath, 'w');
+            fprintf(fid, '=== Information ===\n');
+            for i = 1:size(info_cell,1)
+                fprintf(fid, '%s,%s\n', info_cell{i,1}, info_cell{i,2});
+            end
+            fprintf(fid, '\n=== Coverage (%%) ===\n');
+            fclose(fid);
+            writetable(cov_data, fullpath, 'WriteMode', 'append', 'WriteRowNames', true);
+            fid = fopen(fullpath, 'a');
+            fprintf(fid, '\n=== Transitions (%%) ===\n');
+            fclose(fid);
+            writetable(trans_data, fullpath, 'WriteMode', 'append', 'WriteRowNames', true);
+            fid = fopen(fullpath, 'a');
+            fprintf(fid, '\n=== Event Metrics ===\n');
+            fclose(fid);
+            writetable(event_data, fullpath, 'WriteMode', 'append', 'WriteRowNames', true);
+            fprintf('Статистика сохранена в CSV %s\n', fullpath);
+        end
+    end
+    
     function on_filter_change(~, ~, fig)
         study_data = getappdata(fig, 'study_data');
         var_names = fieldnames(study_data.filters);
@@ -179,6 +246,7 @@
             return;
         end
         
+        % Покрытие и переходы
         cov_sum = zeros(1, sdata.n_classes);
         trans_sum = zeros(sdata.n_classes);
         for i = idx
@@ -196,6 +264,7 @@
         end
         set(findobj(fig,'Tag','text_cov'), 'String', sprintf('Наборов в выборке: %d\n%s', n_sel, cov_str));
         
+        % Метрики по событиям
         dropdown = findobj(fig,'Tag','dropdown_event_type');
         if ~isempty(dropdown)
             ev_list = get(dropdown,'String');
@@ -207,6 +276,35 @@
                 if ~isnan(t_from) && ~isnan(t_to)
                     metrics = compute_group_event_metrics(sdata, idx, ev_type, t_from, t_to);
                     set(findobj(fig,'Tag','table_event'), 'Data', metrics);
+                    
+                    % Сохраняем для экспорта
+                    % Получаем текущие активные фильтры
+                    filter_names = fieldnames(sdata.filters);
+                    filter_vals = {};
+                    for f = 1:length(filter_names)
+                        control = findobj(fig, 'Tag', ['filter_' filter_names{f}]);
+                        if ~isempty(control)
+                            items = get(control, 'String');
+                            val = get(control, 'Value');
+                            if val > 1
+                                filter_vals{f} = items{val};
+                            else
+                                filter_vals{f} = 'Все';
+                            end
+                        else
+                            filter_vals{f} = 'Все';
+                        end
+                    end
+                    filter_info = struct('names', {filter_names}, 'values', {filter_vals});
+                    export_struct = struct();
+                    export_struct.coverage = avg_cov;
+                    export_struct.transitions = avg_trans;
+                    export_struct.event_metrics = metrics;
+                    export_struct.n_selected = n_sel;
+                    export_struct.filter_info = filter_info;
+                    export_struct.event_type = ev_type;
+                    export_struct.time_window = [t_from, t_to];
+                    setappdata(fig, 'export_stats', export_struct);
                 end
             end
         end
