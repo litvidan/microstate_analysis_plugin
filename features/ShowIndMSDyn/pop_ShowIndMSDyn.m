@@ -1,5 +1,5 @@
 ﻿function com = pop_ShowIndMSDyn(AllEEG)
-    [~, nogui] = eegplugin_simplemicrostate;
+    [~, nogui] = eegplugin_mcstates;
     if nogui, error('Требуется GUI'); end
 
     global CURRENTSET;

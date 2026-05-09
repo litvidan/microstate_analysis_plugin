@@ -1,6 +1,6 @@
 ﻿function [fig_h, com] = pop_ShowIndMSMaps(AllEEG, varargin)
 
-    [~,nogui] = eegplugin_simplemicrostate;    
+    [~,nogui] = eegplugin_mcstates;    
 
     %% Установка значений по умолчанию для выходных данных
     com = '';

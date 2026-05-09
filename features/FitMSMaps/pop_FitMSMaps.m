@@ -1,5 +1,5 @@
-﻿function [EEG, com] = pop_FitMSMaps_simple(AllEEG_in)
-    % pop_FitMSMaps_simple - Упрощённое обратное наложение микросостояний
+﻿function [EEG, com] = pop_FitMSMaps(AllEEG_in)
+    % pop_FitMSMaps - Обратное наложение микросостояний
     % Загружает параметры из fit_config.json
 
     com = '';
@@ -53,7 +53,7 @@ end
 function config = load_fit_config()
     config = [];
     plugin_path = fileparts(mfilename('fullpath'));
-    config_file = fullfile(plugin_path, '..\\fit_config.json');
+    config_file = fullfile(plugin_path, '.\\fit_config.json');
 
     if ~exist(config_file, 'file')
         errordlg2(sprintf('Файл конфигурации не найден:\n%s', config_file), 'Ошибка');

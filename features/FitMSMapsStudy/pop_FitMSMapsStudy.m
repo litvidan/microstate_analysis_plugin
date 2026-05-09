@@ -1,5 +1,5 @@
-﻿function [STUDY, ALLEEG, com] = pop_FitMSMapsStudy_simple(STUDY, ALLEEG, varargin)
-    % pop_FitMSMapsStudy_simple - GUI wrapper for applying microstate backfitting to a STUDY.
+﻿function [STUDY, ALLEEG, com] = pop_FitMSMapsStudy(STUDY, ALLEEG, varargin)
+    % pop_FitMSMapsStudy - GUI wrapper for applying microstate backfitting to a STUDY.
     % After backfitting, optionally displays grand average dynamics.
     %
     % Usage:

@@ -10,20 +10,15 @@
     setappdata(fig, 'study_data', study_data);
     setappdata(fig, 'current_indices', 1:study_data.n_sets);
     setappdata(fig, 'filter_values', struct());
-    setappdata(fig, 'export_stats', []); % для хранения экспортируемых данных
+    setappdata(fig, 'export_stats', []);
 
-    % --- Panel for maps (unchanged) ---
+    % --- Map Panel ---
     map_panel = uipanel(fig, 'Units','normalized',...
         'Position',[0.05, 0.80, 0.9, 0.18], 'Title','Карты микросостояний','FontSize',11);
 
-    % --- Filter Panel (unchanged) ---
+    % --- Filter Panel  ---
     filter_panel = uipanel(fig, 'Units','normalized',...
         'Position',[0.05, 0.70, 0.9, 0.08], 'Title','Фильтры','FontSize',11);
-    
-    % --- Export button ---
-    uicontrol(filter_panel, 'Style','pushbutton', 'String','Экспорт в Excel/CSV', ...
-        'Units','normalized', 'Position',[0.85, 0.2, 0.14, 0.6], ...
-        'Callback', {@export_stats_callback, fig});
     
     var_names = fieldnames(study_data.filters);
     n_vars = length(var_names);
@@ -48,35 +43,35 @@
             'Position',[0.05,0.2,0.9,0.6], 'HorizontalAlignment','center');
     end
     
-    % --- Transitions Panel (unchanged) ---
+    % --- Transitions Panel ---
     trans_panel = uipanel(fig, 'Units','normalized',...
-        'Position',[0.05, 0.35, 0.9, 0.33], 'Title','Переходы (усреднённые по группе)','FontSize',11);
+        'Position',[0.05, 0.45, 0.9, 0.20], 'Title','Переходы (усреднённые по группе)','FontSize',11);
     uitable(trans_panel, 'Units','normalized','Position',[0.05,0.05,0.9,0.9],...
         'ColumnName',class_names, 'RowName',class_names, ...
         'Data',zeros(n_classes), 'ColumnFormat',repmat({'numeric'},1,n_classes),...
         'ColumnEditable',false(1,n_classes), 'ColumnWidth',repmat({60},1,n_classes),...
         'FontSize',12, 'Tag','table_global');
     
-    % --- Coverage Panel (unchanged) ---
+    % --- Coverage Panel  ---
     cov_panel = uipanel(fig, 'Units','normalized',...
-        'Position',[0.05, 0.25, 0.9, 0.09], 'Title','Покрытие и кол-во наборов','FontSize',11);
+        'Position',[0.05, 0.35, 0.9, 0.08], 'Title','Покрытие и кол-во наборов','FontSize',11);
     uicontrol(cov_panel, 'Style','text', 'Units','normalized',...
         'Position',[0.02,0.1,0.96,0.8], 'HorizontalAlignment','left', 'FontSize',10, ...
         'String','', 'Tag','text_cov');
     
-    % --- Event Metrics Panel (unchanged) ---
+    % --- Event Metrics Panel  ---
     event_panel = uipanel(fig, 'Units','normalized',...
-        'Position',[0.05, 0.08, 0.9, 0.16], 'Title','Метрики по событиям (средние по группе)','FontSize',11);
+        'Position',[0.05, 0.15, 0.9, 0.20], 'Title','Метрики по событиям (средние по группе)','FontSize',11);
     create_event_controls(event_panel, study_data, @(varargin) update_display(fig));
     
-    % --- Button Panel (export) ---
+    % --- Button Panel  ---
     button_panel = uipanel(fig, 'Units','normalized',...
-        'Position',[0.05, 0.01, 0.9, 0.05], 'BorderType','none');
+        'Position',[0.05, 0.01, 0.9, 0.07], 'BorderType','none');
     uicontrol(button_panel, 'Style','pushbutton', 'String','Экспорт в Excel/CSV', ...
         'Units','normalized', 'Position',[0.85, 0.1, 0.14, 0.8], ...
         'Callback', {@(~,~) logic_export_study_stats(fig, template_name)});
     
-    % --- Plot Maps (simplified, as before) ---
+    % --- Plot Maps ---
     if isfield(study_data, 'MSMaps') && ~isempty(study_data.MSMaps) && ...
        isfield(study_data, 'chanlocs') && ~isempty(study_data.chanlocs)
         delete(get(map_panel, 'Children'));
@@ -152,23 +147,20 @@
             writecell(info_cell, fullpath, 'Sheet', 'Info');
             fprintf('Статистика сохранена в %s\n', fullpath);
         else
-            % CSV сохраняем каждый отдельный лист как отдельный файл? Неудобно. Лучше один CSV с разделителями.
-            % Для простоты сохраним один CSV файл с объединёнными таблицами (менее удобно, но работает).
-            % Предлагаем сохранить как CSV с несколькими секциями.
             fid = fopen(fullpath, 'w');
-            fprintf(fid, '=== Information ===\n');
+            fprintf(fid, '=== Информация ===\n');
             for i = 1:size(info_cell,1)
                 fprintf(fid, '%s,%s\n', info_cell{i,1}, info_cell{i,2});
             end
-            fprintf(fid, '\n=== Coverage (%%) ===\n');
+            fprintf(fid, '\n=== Покрытие (%%) ===\n');
             fclose(fid);
             writetable(cov_data, fullpath, 'WriteMode', 'append', 'WriteRowNames', true);
             fid = fopen(fullpath, 'a');
-            fprintf(fid, '\n=== Transitions (%%) ===\n');
+            fprintf(fid, '\n=== Переходы (%%) ===\n');
             fclose(fid);
             writetable(trans_data, fullpath, 'WriteMode', 'append', 'WriteRowNames', true);
             fid = fopen(fullpath, 'a');
-            fprintf(fid, '\n=== Event Metrics ===\n');
+            fprintf(fid, '\n=== Метрики по событиям ===\n');
             fclose(fid);
             writetable(event_data, fullpath, 'WriteMode', 'append', 'WriteRowNames', true);
             fprintf('Статистика сохранена в CSV %s\n', fullpath);

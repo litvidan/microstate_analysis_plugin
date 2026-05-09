@@ -1,6 +1,6 @@
 ﻿function [AllEEG, EEGout, CurrentSet, com] = pop_SortMSMaps(AllEEG, varargin)
 
-    [~,nogui] = eegplugin_simplemicrostate;
+    [~,nogui] = eegplugin_mcstates;
 
     %% Set defaults for outputs
     com = '';

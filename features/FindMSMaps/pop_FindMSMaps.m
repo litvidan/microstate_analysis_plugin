@@ -1,5 +1,5 @@
-﻿function [EEGout, com] = pop_FindMSMaps_simple(AllEEG)
-    % pop_FindMSMaps_simple - Упрощённое выделение микросостояний с загрузкой параметров из cluster_config.mat
+﻿function [EEGout, com] = pop_FindMSMaps(AllEEG)
+    % pop_FindMSMaps - Выделение микросостояний с загрузкой параметров из cluster_config.mat
     %
     % Вход: ALLEEG - массив структур EEGLAB
     % Выход: EEGout - обновлённые наборы, com - строка истории
