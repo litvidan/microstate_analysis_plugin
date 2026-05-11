@@ -53,7 +53,7 @@
 
     % После успешного backfitting, в конце функции pop_FitMSMapsStudy_simple.m:
     if success_count > 0
-        answer = questdlg('Присвоение завершено. Показать усреднённую статистику для STUDY?', ...
+        answer = questdlg('Присвоение завершено. Показать статистику для STUDY?', ...
                           'Study статистика', 'Да', 'Нет', 'Да');
         if strcmp(answer, 'Да')
             try
